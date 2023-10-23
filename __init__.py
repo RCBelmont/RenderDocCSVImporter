@@ -1,14 +1,11 @@
-import os.path
 import csv
-import math
+import os.path
 import os.path
 import random
-import subprocess
 
-from mathutils import Vector
 import bmesh
-
 import bpy
+from mathutils import Vector
 
 bl_info = {
     "name": "Renderdoc CSV Import",
@@ -24,9 +21,51 @@ bl_info = {
 
 
 # region local method
+def parse_csv_key_word(csv_path: str):
+    temp_list = []
+
+    def connect_list(l):
+        for key_word in l:
+            if key_word not in temp_list:
+                temp_list.append(key_word)
+
+    if os.path.exists(csv_path):
+        if os.path.isdir(csv_path):
+            for r, d, fs in os.walk(csv_path):
+                for f in fs:
+                    file_path = os.path.join(r, f)
+                    if os.path.isfile(file_path) and file_path.endswith(".csv"):
+                        result = _parse_csv_key_word(file_path)
+                        if result:
+                            connect_list(result)
+        else:
+            result = _parse_csv_key_word(csv_path)
+            if result:
+                connect_list(result)
+    ret_list = []
+    temp_dic = {}
+    for key_world in temp_list:
+        com_list = key_world.split('.')
+        if com_list[0] not in temp_dic:
+            temp_dic[com_list[0]] = 1
+        else:
+            temp_dic[com_list[0]] += 1
+    return temp_dic
+
+
+def _parse_csv_key_word(csv_path: str):
+    if os.path.isfile(csv_path) and csv_path.endswith(".csv"):
+        with open(csv_path) as f:
+            readout = list(csv.reader(f))
+        title_list = []
+        for title in readout[0]:
+            title_list.append(title.strip())
+        return title_list
+    return None
+
+
 def set_clipboard_contents(text):
     bpy.context.window_manager.clipboard = "DDDDD"
-
 
 
 class VectorData:
@@ -66,7 +105,6 @@ def parse_csv_data(csv_path):
     title_list = []
     for title in readout[0]:
         title_list.append(title.strip())
-
     table_data_list = []
     for i in range(1, len(readout)):
         data_list = readout[i]
@@ -89,7 +127,7 @@ def parse_csv_data(csv_path):
     return table_data_list
 
 
-def get_all_vertex(csv_data_list):
+def get_all_vertex(csv_data_list, pos_key):
     max_vert_idx = 0
     for data in csv_data_list:
         idx = data["IDX"]
@@ -98,17 +136,12 @@ def get_all_vertex(csv_data_list):
     vert_list = [None] * (max_vert_idx + 1)
     for data in csv_data_list:
         idx = data["IDX"]
-        pos_key = key_dic['pos']
-        normal_key = key_dic['normal']
+        pos_key = pos_key
         if pos_key in data:
             pos = data[pos_key]
         else:
             pos = VectorData()
-        if normal_key in data:
-            normal = data[normal_key]
-        else:
-            normal = VectorData(z=1)
-        vert_list[idx] = {'pos': pos, 'normal': normal}
+        vert_list[idx] = {'pos': pos}
     return vert_list
 
 
@@ -119,10 +152,21 @@ def get_k_v(dic, key, default):
         return default
 
 
-def create_mesh_from_csv(csv_path):
+def create_mesh_from_csv(context, csv_path, b_overlay):
+    ## Key
+    data_block = context.scene.rd_csv_importer_prop
+    pos_key_word = data_block.position_key_word
+    normal_key_word = data_block.normal_key_word
+    vert_color_key_word = data_block.vertex_color_key_word
+    uv_key_words = []
+    for d in context.scene.rd_csv_importer_prop_type_list:
+        uv_key_words.append(d.key_words)
+
+    key_word_dic = parse_csv_key_word(csv_path)
+
     csv_data_list = parse_csv_data(csv_path)
     pure_date_list = []
-    vert_list = get_all_vertex(csv_data_list)
+    vert_list = get_all_vertex(csv_data_list, pos_key_word)
     mesh = bpy.data.meshes.new("NewMesh")
     bm = bmesh.new()
     for v_data in vert_list:
@@ -150,7 +194,7 @@ def create_mesh_from_csv(csv_path):
     bm.free()
     # Custom Normal
     custom_normal_list = []
-    normal_key = key_dic['normal']
+    normal_key = normal_key_word
     for poly in mesh.polygons:
         poly.use_smooth = True
     for data in pure_date_list:
@@ -165,30 +209,29 @@ def create_mesh_from_csv(csv_path):
         mesh.normals_split_custom_set(custom_normal_list)
 
     # UV
-    key_list = list(key_dic.keys())
     idx = 1
-    for key in key_list:
-        if key.startswith("uv"):
-            if key.endswith('_v4'):
-                if key_dic[key] in pure_date_list[0]:
-                    uv_layer = mesh.uv_layers.new(name="map{}".format(idx))
-                    for i, data in enumerate(pure_date_list):
-                        uv_data = data[key_dic[key]]
-                        uv_layer.data[i].uv = (uv_data.x, uv_data.y)
-                    idx += 1
-                if key_dic[key] in pure_date_list[0]:
-                    uv_layer = mesh.uv_layers.new(name="map{}".format(idx))
-                    for i, data in enumerate(pure_date_list):
-                        uv_data = data[key_dic[key]]
-                        uv_layer.data[i].uv = (uv_data.z, uv_data.w)
-                    idx += 1
-            else:
-                if key_dic[key] in pure_date_list[0]:
-                    uv_layer = mesh.uv_layers.new(name="map{}".format(idx))
-                    for i, data in enumerate(pure_date_list):
-                        uv_data = data[key_dic[key]]
-                        uv_layer.data[i].uv = (uv_data.x, uv_data.y)
-                    idx += 1
+    for key in uv_key_words:
+        com_count = key_word_dic[key]
+        if com_count > 2:
+            if key in pure_date_list[0]:
+                uv_layer = mesh.uv_layers.new(name="map{}".format(idx))
+                for i, data in enumerate(pure_date_list):
+                    uv_data = data[key]
+                    uv_layer.data[i].uv = (uv_data.x, uv_data.y)
+                idx += 1
+            if key in pure_date_list[0]:
+                uv_layer = mesh.uv_layers.new(name="map{}".format(idx))
+                for i, data in enumerate(pure_date_list):
+                    uv_data = data[key]
+                    uv_layer.data[i].uv = (uv_data.z, uv_data.w)
+                idx += 1
+        else:
+            if key in pure_date_list[0]:
+                uv_layer = mesh.uv_layers.new(name="map{}".format(idx))
+                for i, data in enumerate(pure_date_list):
+                    uv_data = data[key]
+                    uv_layer.data[i].uv = (uv_data.x, uv_data.y)
+                idx += 1
 
     # # UV1
     # if key_dic['uv1'] in csv_data_list[0]:
@@ -215,10 +258,10 @@ def create_mesh_from_csv(csv_path):
     #         uv_data = data[key_dic['uv4']]
     #         uv_layer.data[i].uv = (uv_data.x, uv_data.y)
     # Color
-    if key_dic['v_color'] in pure_date_list[0]:
+    if vert_color_key_word in pure_date_list[0]:
         color_layer = mesh.vertex_colors.new(name="ColorMap")
         for i, data in enumerate(pure_date_list):
-            color = data[key_dic['v_color']]
+            color = data[vert_color_key_word]
             color_layer.data[i].color = (color.x, color.y, color.z, color.w)
 
     mesh.calc_tangents(uvmap="map1")
@@ -246,16 +289,60 @@ class OPT_TEST(bpy.types.Operator):
         return True
 
 
+class OPT_PARSE_KEY_WORDS(bpy.types.Operator):
+    bl_idname = "rd_csv_importer.parse_key_words"
+    bl_label = "Parse Key Words"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        data_list = context.window_manager.rd_csv_importer_prop_key_words
+        data_list.clear()
+        csv_path = context.scene.rd_csv_importer_prop.csv_file_path
+        result = parse_csv_key_word(csv_path)
+        kv_list = list(result.items())
+        for name, com_count in kv_list:
+            data_obj = data_list.add()
+            data_obj.key_word = name
+            data_obj.com_count = com_count
+        return {'FINISHED'}
+
+    @classmethod
+    def poll(cls, context):
+        scene = context.scene
+        path = scene.rd_csv_importer_prop.csv_file_path
+        if not path:
+            return False
+        if not os.path.exists(path):
+            return False
+        return True
+
+
 class OPT_RD_CSV_IMPORTER_COPY_KEY_WORDS(bpy.types.Operator):
     bl_idname = "rd_csv_importer.copy_key_words"
     bl_label = "Copy"
     bl_options = {'REGISTER'}
+    opt_type: bpy.props.StringProperty(
+        default=""
+    )
     key_words: bpy.props.StringProperty(
         default=""
     )
 
     def execute(self, context):
-        set_clipboard_contents(self.key_words)
+        prop_data = context.scene.rd_csv_importer_prop
+        if self.opt_type == "pos":
+            prop_data.position_key_word = self.key_words
+        elif self.opt_type == "norm":
+            prop_data.normal_key_word = self.key_words
+        elif self.opt_type == "vert_color":
+            prop_data.vertex_color_key_word = self.key_words
+        elif self.opt_type == "uv":
+            data_list = context.scene.rd_csv_importer_prop_type_list
+            data_obj = data_list.add()
+            data_obj.key_words = self.key_words
+        elif self.opt_type == "copy":
+            prop_data.position_key_word = self.key_words
+            set_clipboard_contents(self.key_words)
         return {'FINISHED'}
 
     @classmethod
@@ -269,7 +356,12 @@ class OPT_RD_CSV_IMPORTER_DO_IMPORT(bpy.types.Operator):
     bl_options = {'REGISTER'}
 
     def execute(self, context):
-
+        scene = context.scene
+        path = scene.rd_csv_importer_prop.csv_file_path
+        if os.path.exists(path):
+            if os.path.isfile(path):
+                block_overlay = scene.rd_csv_importer_prop.block_overlay
+                create_mesh_from_csv(context, csv_path=path, b_overlay=block_overlay)
         return {'FINISHED'}
 
     @classmethod
@@ -329,7 +421,16 @@ class OPT_RD_CSV_IMPORTER_REMOVE_PROPER_TYPE(bpy.types.Operator):
 # endregion
 
 # region Property
-class RDCSVImporterProp(bpy.types.PropertyGroup):
+class PROP_RDCSVImporterKeyWordsULItemProp(bpy.types.PropertyGroup):
+    key_word: bpy.props.StringProperty(
+        description="TEXCOORD0"
+    )
+    com_count: bpy.props.IntProperty(
+        default=1
+    )
+
+
+class PROP_RDCSVImporterProp(bpy.types.PropertyGroup):
     # bg_strength: bpy.props.FloatProperty(
     #     name='Strength', description="",
     #     default=1.0,
@@ -342,20 +443,27 @@ class RDCSVImporterProp(bpy.types.PropertyGroup):
         default=1.0,
         max=10.0, min=0.0
     )
+    block_overlay: bpy.props.BoolProperty(
+        name='Block Overlay',
+        default=False
+    )
     csv_file_path: bpy.props.StringProperty(
         name='SavePath', description="CSV Path",
         subtype='NONE'
     )
-
-
-class RDCSVImporterPropertyDefine(bpy.types.PropertyGroup):
-    target_prop_type: bpy.props.EnumProperty(
-        items=[("vert_color", "VertexColor", "Vertex Color", 0, 0),
-               ("normal", "Normal", "Normal", 0, 1),
-               ("uv", "UV", "UV Map", 0, 2)],
-        name="Type"
+    position_key_word: bpy.props.StringProperty(
+        name='Position', description="CSV Path",
     )
-    target_prop_key: bpy.props.StringProperty(
+    normal_key_word: bpy.props.StringProperty(
+        name='Normal', description="CSV Path",
+    )
+    vertex_color_key_word: bpy.props.StringProperty(
+        name='VertColor', description="CSV Path",
+    )
+
+
+class PROP_PROP_RDCSVImporterPropertyDefine(bpy.types.PropertyGroup):
+    key_words: bpy.props.StringProperty(
         default="TEXCOORD0"
     )
 
@@ -367,10 +475,10 @@ class VIEW_UL_PROP_LIST(bpy.types.UIList):
             column = layout.column(align=True)
             row = column.row(align=True)
             split = row.split(factor=0.1)
-            split.label(text="prop{}".format(index + 1))
-            split.prop(item, "target_prop_type", text="")
-            split.prop(item, "target_prop_key", text="")
-            del_opt = split.operator("rd_csv_importer.remove_prop_type", text="Del")
+            split.label(text="uv{}".format(index + 1))
+            split1 = split.split(factor=0.8)
+            split1.prop(item, "key_words", text="")
+            del_opt = split1.operator("rd_csv_importer.remove_prop_type", text="Del")
             del_opt.clear_all = False
             del_opt.remove_idx = index
 
@@ -380,9 +488,27 @@ class VIEW_UL_KEY_WORDS_LIST(bpy.types.UIList):
         if self.layout_type in {'DEFAULT', 'COMPACT', 'GRID'}:
             column = layout.column(align=True)
             row = column.row(align=True)
-            split = row.split(factor=0.1)
-            split.label("ddddddd")
-            split.operator("rd_csv_importer.copy_key_words").key_words = "TTTEEEE"
+            split = row.split(factor=0.5)
+            split.label(text=item.key_word)
+            btn_to_pos = split.operator("rd_csv_importer.copy_key_words", text='p')
+            btn_to_pos.opt_type = 'pos'
+            btn_to_pos.key_words = item.key_word
+
+            btn_to_norm = split.operator("rd_csv_importer.copy_key_words", text='n')
+            btn_to_norm.opt_type = 'norm'
+            btn_to_norm.key_words = item.key_word
+
+            btn_to_vert_color = split.operator("rd_csv_importer.copy_key_words", text='vc')
+            btn_to_vert_color.opt_type = 'vert_color'
+            btn_to_vert_color.key_words = item.key_word
+
+            btn_to_uv = split.operator("rd_csv_importer.copy_key_words", text='uv')
+            btn_to_uv.opt_type = 'uv'
+            btn_to_uv.key_words = item.key_word
+
+            btn_copy = split.operator("rd_csv_importer.copy_key_words", text='copy')
+            btn_copy.opt_type = 'copy'
+            btn_copy.key_words = item.key_word
 
 
 class VIEW3D_PT_RENDERDOC_CSV(bpy.types.Panel):
@@ -396,13 +522,24 @@ class VIEW3D_PT_RENDERDOC_CSV(bpy.types.Panel):
 
         prop = context.scene.rd_csv_importer_prop
         layout.prop(prop, "csv_file_path")
-        layout.template_list("VIEW_UL_PROP_LIST", "", context.scene, "rd_csv_importer_prop_type_list", context.scene,
-                             "rd_csv_importer_prop_type_idx")
-        layout.operator("rd_csv_importer.add_prop_type")
-        layout.operator("rd_csv_importer.remove_prop_type", text="ClearAll").clear_all = True
+        prop_box = layout.box()
+        prop_box.prop(prop, 'position_key_word')
+        prop_box.prop(prop, 'normal_key_word')
+        prop_box.prop(prop, 'vertex_color_key_word')
+        split = layout.split(factor=0.5)
+        split.label(text="UV")
+        split.operator("rd_csv_importer.add_prop_type")
+        split.operator("rd_csv_importer.remove_prop_type", text="ClearAll").clear_all = True
+        layout.template_list("VIEW_UL_PROP_LIST", "", context.scene, "rd_csv_importer_prop_type_list",
+                             context.scene, "rd_csv_importer_prop_type_idx")
+        layout.separator(factor=2)
+        layout.operator("rd_csv_importer.parse_key_words")
+        layout.template_list("VIEW_UL_KEY_WORDS_LIST", "", context.window_manager, "rd_csv_importer_prop_key_words",
+                             context.window_manager, "rd_csv_importer_prop_key_words_idx")
+        layout.separator(factor=2)
+        layout.label(text="Import Setting")
+        layout.prop(prop,"block_overlay")
         layout.operator("rd_csv_importer.do_import")
-        layout.operator("rd_csv_importer.test")
-
         pass
 
     @classmethod
@@ -411,13 +548,15 @@ class VIEW3D_PT_RENDERDOC_CSV(bpy.types.Panel):
 
 
 class_to_register = (
-    RDCSVImporterPropertyDefine,
-    RDCSVImporterProp,
+    PROP_PROP_RDCSVImporterPropertyDefine,
+    PROP_RDCSVImporterProp,
+    PROP_RDCSVImporterKeyWordsULItemProp,
     OPT_RD_CSV_IMPORTER_DO_IMPORT,
     OPT_RD_CSV_IMPORTER_ADD_PROP_TYPE,
     OPT_RD_CSV_IMPORTER_REMOVE_PROPER_TYPE,
     OPT_RD_CSV_IMPORTER_COPY_KEY_WORDS,
     OPT_TEST,
+    OPT_PARSE_KEY_WORDS,
     VIEW_UL_PROP_LIST,
     VIEW_UL_KEY_WORDS_LIST,
     VIEW3D_PT_RENDERDOC_CSV,
@@ -427,10 +566,13 @@ class_to_register = (
 def register():
     for c in class_to_register:
         bpy.utils.register_class(c)
-    bpy.types.Scene.rd_csv_importer_prop_type_list = bpy.props.CollectionProperty(type=RDCSVImporterPropertyDefine)
+    bpy.types.Scene.rd_csv_importer_prop_type_list = bpy.props.CollectionProperty(
+        type=PROP_PROP_RDCSVImporterPropertyDefine)
     bpy.types.Scene.rd_csv_importer_prop_type_idx = bpy.props.IntProperty()
-    bpy.types.Scene.rd_csv_importer_prop = bpy.props.PointerProperty(type=RDCSVImporterProp)
-    bpy.types.WindowManager.rd_csv_importer_prop_key_words = bpy.props.CollectionProperty(bpy.types.StringProperty)
+    bpy.types.Scene.rd_csv_importer_prop = bpy.props.PointerProperty(type=PROP_RDCSVImporterProp)
+    bpy.types.WindowManager.rd_csv_importer_prop_key_words = bpy.props.CollectionProperty(
+        type=PROP_RDCSVImporterKeyWordsULItemProp)
+    bpy.types.WindowManager.rd_csv_importer_prop_key_words_idx = bpy.props.IntProperty()
 
 
 def unregister():
@@ -440,3 +582,4 @@ def unregister():
     del bpy.types.Scene.rd_csv_importer_prop_type_idx
     del bpy.types.Scene.rd_csv_importer_prop
     del bpy.types.WindowManager.rd_csv_importer_prop_key_words
+    del bpy.types.WindowManager.rd_csv_importer_prop_key_words_idx
