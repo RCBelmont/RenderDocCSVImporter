@@ -211,27 +211,28 @@ def create_mesh_from_csv(context, csv_path, b_overlay):
     # UV
     idx = 1
     for key in uv_key_words:
-        com_count = key_word_dic[key]
-        if com_count > 2:
-            if key in pure_date_list[0]:
-                uv_layer = mesh.uv_layers.new(name="map{}".format(idx))
-                for i, data in enumerate(pure_date_list):
-                    uv_data = data[key]
-                    uv_layer.data[i].uv = (uv_data.x, uv_data.y)
-                idx += 1
-            if key in pure_date_list[0]:
-                uv_layer = mesh.uv_layers.new(name="map{}".format(idx))
-                for i, data in enumerate(pure_date_list):
-                    uv_data = data[key]
-                    uv_layer.data[i].uv = (uv_data.z, uv_data.w)
-                idx += 1
-        else:
-            if key in pure_date_list[0]:
-                uv_layer = mesh.uv_layers.new(name="map{}".format(idx))
-                for i, data in enumerate(pure_date_list):
-                    uv_data = data[key]
-                    uv_layer.data[i].uv = (uv_data.x, uv_data.y)
-                idx += 1
+        if key in key_word_dic:
+            com_count = key_word_dic[key]
+            if com_count > 2:
+                if key in pure_date_list[0]:
+                    uv_layer = mesh.uv_layers.new(name="map{}".format(idx))
+                    for i, data in enumerate(pure_date_list):
+                        uv_data = data[key]
+                        uv_layer.data[i].uv = (uv_data.x, uv_data.y)
+                    idx += 1
+                if key in pure_date_list[0]:
+                    uv_layer = mesh.uv_layers.new(name="map{}".format(idx))
+                    for i, data in enumerate(pure_date_list):
+                        uv_data = data[key]
+                        uv_layer.data[i].uv = (uv_data.z, uv_data.w)
+                    idx += 1
+            else:
+                if key in pure_date_list[0]:
+                    uv_layer = mesh.uv_layers.new(name="map{}".format(idx))
+                    for i, data in enumerate(pure_date_list):
+                        uv_data = data[key]
+                        uv_layer.data[i].uv = (uv_data.x, uv_data.y)
+                    idx += 1
 
     # # UV1
     # if key_dic['uv1'] in csv_data_list[0]:
@@ -538,7 +539,7 @@ class VIEW3D_PT_RENDERDOC_CSV(bpy.types.Panel):
                              context.window_manager, "rd_csv_importer_prop_key_words_idx")
         layout.separator(factor=2)
         layout.label(text="Import Setting")
-        layout.prop(prop,"block_overlay")
+        layout.prop(prop, "block_overlay")
         layout.operator("rd_csv_importer.do_import")
         pass
 
