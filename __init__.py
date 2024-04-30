@@ -174,7 +174,7 @@ def create_mesh_from_csv(context, csv_path, b_overlay):
         rate = 0.0001 if b_overlay else 0
         r1 = random.uniform(-1, 1) * rate
         r2 = random.uniform(-1, 1) * rate
-        bm.verts.new((co.x + r1, co.y, co.z + r2))
+        bm.verts.new((-co.x + r1,  co.y + r2, co.z+r1))
     bm.verts.ensure_lookup_table()
     bm.normal_update()
     for i in range(0, len(csv_data_list), 3):
@@ -182,10 +182,10 @@ def create_mesh_from_csv(context, csv_path, b_overlay):
         d2 = csv_data_list[i + 1]
         d3 = csv_data_list[i + 2]
         try:
-            bm.faces.new((bm.verts[d1["IDX"]], bm.verts[d2["IDX"]], bm.verts[d3["IDX"]]))
-            pure_date_list.append(d1)
-            pure_date_list.append(d2)
+            bm.faces.new((bm.verts[d3["IDX"]], bm.verts[d2["IDX"]], bm.verts[d1["IDX"]]))
             pure_date_list.append(d3)
+            pure_date_list.append(d2)
+            pure_date_list.append(d1)
         except:
             pass
 
@@ -202,9 +202,10 @@ def create_mesh_from_csv(context, csv_path, b_overlay):
         if norm:
             v = Vector((norm.x, norm.y, norm.z))
             v = v.normalized()
-            custom_normal_list.append((v.x, v.y, v.z))
+            custom_normal_list.append((-v.x, v.y, v.z))
             ##custom_normal_list.append((math.sqrt(0.5),0,math.sqrt(0.5)))
-    mesh.use_auto_smooth = True
+
+    #mesh.use_auto_smooth = True
     if len(custom_normal_list) > 0:
         mesh.normals_split_custom_set(custom_normal_list)
 
