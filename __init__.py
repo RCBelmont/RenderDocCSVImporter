@@ -364,6 +364,13 @@ class OPT_RD_CSV_IMPORTER_DO_IMPORT(bpy.types.Operator):
             if os.path.isfile(path):
                 block_overlay = scene.rd_csv_importer_prop.block_overlay
                 create_mesh_from_csv(context, csv_path=path, b_overlay=block_overlay)
+            else:
+                for r, d, fs in os.walk(path):
+                    for f in fs:
+                        file_path = os.path.join(r, f)
+                        if os.path.isfile(file_path) and file_path.endswith(".csv"):
+                            block_overlay = scene.rd_csv_importer_prop.block_overlay
+                            create_mesh_from_csv(context, csv_path=file_path, b_overlay=block_overlay)
         return {'FINISHED'}
 
     @classmethod
