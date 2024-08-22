@@ -113,7 +113,10 @@ def parse_csv_data(csv_path):
         for idx, data in enumerate(data_list):
             title = title_list[idx]
             title_com = title.split('.')
-            if title_com[0] == 'VTX' or title_com[0] == 'IDX':
+            if title_com[0] == 'VTX':
+                table_data[title_com[0]] = int(data)
+                continue
+            if title_com[0] == 'IDX':
                 table_data[title_com[0]] = int(data)
                 continue
             if len(title_com) > 1:
@@ -124,16 +127,18 @@ def parse_csv_data(csv_path):
                     vec_data = VectorData()
                     vec_data.set_com_value(vec_com, float(data))
                     table_data[title_com[0]] = vec_data
+
+
     return table_data_list
 
 
 def get_all_vertex(csv_data_list, pos_key):
     max_vert_idx = 0
+    vert_list = {}
     for data in csv_data_list:
         idx = data["IDX"]
-        if idx > max_vert_idx:
-            max_vert_idx = idx
-    vert_list = [None] * (max_vert_idx + 1)
+        vert_list[idx] = {'pos': VectorData()}
+
     for data in csv_data_list:
         idx = data["IDX"]
         pos_key = pos_key
@@ -159,6 +164,9 @@ def create_mesh_from_csv(context, csv_path, b_overlay):
     normal_key_word = data_block.normal_key_word
     vert_color_key_word = data_block.vertex_color_key_word
     uv_key_words = []
+
+    folder_name = os.path.dirname(csv_path)
+    folder_name = os.path.basename(folder_name)
     for d in context.scene.rd_csv_importer_prop_type_list:
         uv_key_words.append(d.key_words)
 
@@ -167,14 +175,15 @@ def create_mesh_from_csv(context, csv_path, b_overlay):
     csv_data_list = parse_csv_data(csv_path)
     pure_date_list = []
     vert_list = get_all_vertex(csv_data_list, pos_key_word)
-    mesh = bpy.data.meshes.new("NewMesh")
+    mesh = bpy.data.meshes.new(folder_name)
     bm = bmesh.new()
-    for v_data in vert_list:
+
+    for v_data in list(vert_list.values()):
         co = v_data['pos']
         rate = 0.0001 if b_overlay else 0
         r1 = random.uniform(-1, 1) * rate
         r2 = random.uniform(-1, 1) * rate
-        bm.verts.new((-co.x + r1,  co.y + r2, co.z+r1))
+        bm.verts.new((-co.x + r1, co.y + r2, co.z + r1))
     bm.verts.ensure_lookup_table()
     bm.normal_update()
     for i in range(0, len(csv_data_list), 3):
@@ -182,7 +191,13 @@ def create_mesh_from_csv(context, csv_path, b_overlay):
         d2 = csv_data_list[i + 1]
         d3 = csv_data_list[i + 2]
         try:
-            bm.faces.new((bm.verts[d3["IDX"]], bm.verts[d2["IDX"]], bm.verts[d1["IDX"]]))
+            idx_list = list(vert_list.keys())
+            vi1 = idx_list.index(d1["IDX"])
+            vi2 = idx_list.index(d2["IDX"])
+            vi3 = idx_list.index(d3["IDX"])
+
+            bm.faces.new((bm.verts[vi3], bm.verts[vi2], bm.verts[vi1]))
+
             pure_date_list.append(d3)
             pure_date_list.append(d2)
             pure_date_list.append(d1)
@@ -205,7 +220,7 @@ def create_mesh_from_csv(context, csv_path, b_overlay):
             custom_normal_list.append((-v.x, v.y, v.z))
             ##custom_normal_list.append((math.sqrt(0.5),0,math.sqrt(0.5)))
 
-    #mesh.use_auto_smooth = True
+    # mesh.use_auto_smooth = True
     if len(custom_normal_list) > 0:
         mesh.normals_split_custom_set(custom_normal_list)
 
@@ -267,7 +282,19 @@ def create_mesh_from_csv(context, csv_path, b_overlay):
             color_layer.data[i].color = (color.x, color.y, color.z, color.w)
 
     mesh.calc_tangents(uvmap="map1")
-    obj = bpy.data.objects.new("NewObject", mesh)
+    obj = bpy.data.objects.new(folder_name, mesh)
+
+    mat_name = folder_name + "_Mat"
+    if mat_name in bpy.data.materials:
+        mat = bpy.data.materials[mat_name]
+    else:
+        mat = bpy.data.materials.new(name=folder_name + "_Mat")
+        mat.diffuse_color = (random.random(), random.random(), random.random(), 1)
+
+    if mesh.materials:
+        mesh.materials[0] = mat
+    else:
+        mesh.materials.append(mat)
 
     scene = bpy.context.scene
     scene.collection.objects.link(obj)
