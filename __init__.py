@@ -65,7 +65,7 @@ def _parse_csv_key_word(csv_path: str):
 
 
 def set_clipboard_contents(text):
-    bpy.context.window_manager.clipboard = "DDDDD"
+    bpy.context.window_manager.clipboard = text
 
 
 class VectorData:
@@ -128,7 +128,6 @@ def parse_csv_data(csv_path):
                     vec_data.set_com_value(vec_com, float(data))
                     table_data[title_com[0]] = vec_data
 
-
     return table_data_list
 
 
@@ -165,7 +164,12 @@ def create_mesh_from_csv(context, csv_path, b_overlay):
     vert_color_key_word = data_block.vertex_color_key_word
     uv_key_words = []
 
-    folder_name = os.path.dirname(csv_path)
+    folder_name = data_block.mesh_name
+    if data_block.mesh_name_type == "Folder":
+        folder_name = os.path.dirname(csv_path)
+    if data_block.mesh_name_type == "File":
+        folder_name = os.path.basename(csv_path).split(".")[0]
+
     folder_name = os.path.basename(folder_name)
     for d in context.scene.rd_csv_importer_prop_type_list:
         uv_key_words.append(d.key_words)
@@ -196,11 +200,18 @@ def create_mesh_from_csv(context, csv_path, b_overlay):
             vi2 = idx_list.index(d2["IDX"])
             vi3 = idx_list.index(d3["IDX"])
 
-            bm.faces.new((bm.verts[vi3], bm.verts[vi2], bm.verts[vi1]))
+            if data_block.triangle_order == "CW":
+                bm.faces.new((bm.verts[vi1], bm.verts[vi2], bm.verts[vi3]))
+                pure_date_list.append(d1)
+                pure_date_list.append(d2)
+                pure_date_list.append(d3)
+            else:
+                bm.faces.new((bm.verts[vi3], bm.verts[vi2], bm.verts[vi1]))
+                pure_date_list.append(d3)
+                pure_date_list.append(d2)
+                pure_date_list.append(d1)
 
-            pure_date_list.append(d3)
-            pure_date_list.append(d2)
-            pure_date_list.append(d1)
+
         except:
             pass
 
@@ -216,11 +227,15 @@ def create_mesh_from_csv(context, csv_path, b_overlay):
         norm = get_k_v(data, normal_key, None)
         if norm:
             v = Vector((norm.x, norm.y, norm.z))
-            v = v.normalized()
-            custom_normal_list.append((-v.x, v.y, v.z))
-            ##custom_normal_list.append((math.sqrt(0.5),0,math.sqrt(0.5)))
+            if data_block.vert_normal_offset:
+                v = v * 2 - Vector((1, 1, 1))
 
-    # mesh.use_auto_smooth = True
+            v = v.normalized()
+
+            custom_normal_list.append((-v.x, v.y, v.z))
+            ##custom_normal_list.append((0,0,1))
+
+    ##mesh.use_auto_smooth = True
     if len(custom_normal_list) > 0:
         mesh.normals_split_custom_set(custom_normal_list)
 
@@ -281,7 +296,8 @@ def create_mesh_from_csv(context, csv_path, b_overlay):
             color = data[vert_color_key_word]
             color_layer.data[i].color = (color.x, color.y, color.z, color.w)
 
-    mesh.calc_tangents(uvmap="map1")
+    if len(mesh.uv_layers) > 0:
+        mesh.calc_tangents(uvmap="map1")
     obj = bpy.data.objects.new(folder_name, mesh)
 
     mat_name = folder_name + "_Mat"
@@ -496,6 +512,32 @@ class PROP_RDCSVImporterProp(bpy.types.PropertyGroup):
     vertex_color_key_word: bpy.props.StringProperty(
         name='VertColor', description="CSV Path",
     )
+    triangle_order: bpy.props.EnumProperty(
+        items=[
+            ("CW", "顺时针", "顺时针"),
+            ("CCW", "逆时针", "逆时针")
+        ],
+        default="CCW",
+        name="Triangle Order"
+    )
+    vert_normal_offset: bpy.props.BoolProperty(
+        name='VertNormalOffset',
+        default=False
+    )
+
+    mesh_name: bpy.props.StringProperty(
+        name='MeshName',
+        default="mesh"
+    )
+    mesh_name_type: bpy.props.EnumProperty(
+        items=[
+            ("Folder", "文件夹名字", "用文件夹名字"),
+            ("File", "文件名字", "用文件名字"),
+            ("Custom", "自定义名字", "用自定义名字")
+        ],
+        default="Custom",
+        name="MeshNameType"
+    )
 
 
 class PROP_PROP_RDCSVImporterPropertyDefine(bpy.types.PropertyGroup):
@@ -573,14 +615,30 @@ class VIEW3D_PT_RENDERDOC_CSV(bpy.types.Panel):
         layout.template_list("VIEW_UL_KEY_WORDS_LIST", "", context.window_manager, "rd_csv_importer_prop_key_words",
                              context.window_manager, "rd_csv_importer_prop_key_words_idx")
         layout.separator(factor=2)
-        layout.label(text="Import Setting")
-        layout.prop(prop, "block_overlay")
         layout.operator("rd_csv_importer.do_import")
+        layout.separator(factor=2)
+        layout.label(text="Import Setting")
+        layout.label(text="给顶点位置加个随机偏移")
+        layout.prop(prop, "block_overlay")
+
+        layout.separator(factor=2)
+        layout.label(text="三角形顺序（默认为逆时针）")
+        layout.prop(prop, "triangle_order", expand=True)
+        layout.separator(factor=2)
+        layout.label(text="顶点法线偏移(是否对顶点法线进行*2-1偏移)")
+        layout.prop(prop, "vert_normal_offset", text="偏移法线")
+
+        layout.separator(factor=2)
+        layout.label(text="模型名字")
+        layout.prop(prop, "mesh_name_type", text="命名方式", expand=True)
+        layout.prop(prop, "mesh_name", text="自定义名字")
+
         pass
 
-    @classmethod
-    def poll(cls, context):
-        return True
+
+@classmethod
+def poll(cls, context):
+    return True
 
 
 class_to_register = (
